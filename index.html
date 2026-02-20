@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Night Sky & Light Pollution Analyzer</title>
+    <style>
+        :root {
+            --bg-color: #090a0f;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text-main: #e0e0e0;
+            --accent: #4da8da;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            background: radial-gradient(circle at top, #1b2735 0%, var(--bg-color) 100%);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            margin-bottom: 0.2rem;
+        }
+
+        p.subtitle {
+            color: #a0a0a0;
+            margin-bottom: 2rem;
+        }
+
+        .container {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+        }
+
+        input[type="text"],
+        input[type="file"] {
+            width: 100%;
+            padding: 0.8rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            color: white;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #3b8bc0;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .results {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            display: none;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.8rem;
+            padding-bottom: 0.8rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin-top: 1rem;
+            font-style: italic;
+            color: var(--accent);
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>✨ Night Sky Analyzer</h1>
+    <p class="subtitle">Measure stars, sky clarity, and urban light pollution.</p>
+
+    <div class="container">
+        <div class="input-group">
+            <label for="apiKey">Gemini API Key</label>
+            <input type="text" id="apiKey" placeholder="Enter your Google Gemini API key..."
+                value="AIzaSyBqcKIFQQAqN6k7TnlboT2xz2dcN3ffZ5I">
+        </div>
+
+        <div class="input-group">
+            <label for="image1">Night 1 (Primary Image)</label>
+            <input type="file" id="image1" accept="image/png, image/jpeg, image/webp">
+        </div>
+
+        <div class="input-group">
+            <label for="image2">Night 2 (Optional for Comparison)</label>
+            <input type="file" id="image2" accept="image/png, image/jpeg, image/webp">
+        </div>
+
+        <button id="analyzeBtn" onclick="analyzeSky()">Analyze Sky Quality</button>
+        <div class="loader" id="loader">Consulting the stars... please wait.</div>
+
+        <div class="results" id="resultsContainer">
+            <h3>Analysis Results</h3>
+            <div id="resultsData"></div>
+        </div>
+    </div>
+
+    <script>
+        // Helper to convert uploaded files to Base64 strings for the API
+        const fileToBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]); // Strip the data URL prefix
+            reader.onerror = error => reject(error);
+        });
+
+        async function analyzeSky() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const file1 = document.getElementById('image1').files[0];
+            const file2 = document.getElementById('image2').files[0];
+            const btn = document.getElementById('analyzeBtn');
+            const loader = document.getElementById('loader');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsData = document.getElementById('resultsData');
+
+            if (!apiKey || !file1) {
+                alert("Please provide an API Key and at least the primary image.");
+                return;
+            }
+
+            btn.disabled = true;
+            loader.style.display = "block";
+            resultsContainer.style.display = "none";
+
+            try {
+                // Prepare images
+                const base64_1 = await fileToBase64(file1);
+                let base64_2 = null;
+                if (file2) base64_2 = await fileToBase64(file2);
+
+                // Construct prompt enforcing strict JSON output
+                const promptText = `
+                You are an expert astronomer and light pollution analyst.
+                Analyze the provided night sky image(s). 
+                Respond ONLY with a valid JSON object. Do not include markdown formatting, backticks, or extra text.
+                
+                If ONE image is provided, use this JSON format:
+                {
+                  "type": "single",
+                  "starCountEstimate": number,
+                  "skyVisibilityScore": number (0-100),
+                  "lightPollutionBortleClass": number (1-9),
+                  "analysisSummary": "string detailing light pollution and clarity"
+                }
+                
+                If TWO images are provided, compare them and use this JSON format:
+                {
+                  "type": "comparison",
+                  "image1_starCount": number,
+                  "image1_bortleClass": number,
+                  "image1_score": number,
+                  "image2_starCount": number,
+                  "image2_bortleClass": number,
+                  "image2_score": number,
+                  "comparisonSummary": "string detailing clarity changes between the two nights"
+                }`;
+
+                // Build parts for the Gemini REST API
+                const parts = [{ text: promptText }];
+                parts.push({ inlineData: { mimeType: file1.type, data: base64_1 } });
+                if (file2) parts.push({ inlineData: { mimeType: file2.type, data: base64_2 } });
+
+                const requestBody = {
+                    contents: [{ parts: parts }],
+                    generationConfig: { temperature: 0.1 } // Low temp for more factual/analytical outputs
+                };
+
+                // Use gemini-1.5-flash for the best balance of vision speed and capability
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error.message);
+
+                // Clean response of potential markdown JSON wrappers before parsing
+                const rawText = data.candidates[0].content.parts[0].text;
+                const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                const resultJSON = JSON.parse(cleanText);
+
+                // Populate UI
+                let html = '';
+                if (resultJSON.type === "comparison") {
+                    html = `
+                        <div class="metric"><span>⭐ Stars (Night 1)</span> <strong>${resultJSON.image1_starCount}</strong></div>
+                        <div class="metric"><span>🌃 Bortle Scale (Night 1)</span> <strong>Class ${resultJSON.image1_bortleClass}</strong></div>
+                        <div class="metric"><span>📊 Score (Night 1)</span> <strong>${resultJSON.image1_score}/100</strong></div>
+                        <br>
+                        <div class="metric"><span>⭐ Stars (Night 2)</span> <strong>${resultJSON.image2_starCount}</strong></div>
+                        <div class="metric"><span>🌃 Bortle Scale (Night 2)</span> <strong>Class ${resultJSON.image2_bortleClass}</strong></div>
+                        <div class="metric"><span>📊 Score (Night 2)</span> <strong>${resultJSON.image2_score}/100</strong></div>
+                        <br>
+                        <p style="margin-top:1rem;"><strong>Analysis:</strong> ${resultJSON.comparisonSummary}</p>
+                    `;
+                } else {
+                    html = `
+                        <div class="metric"><span>⭐ Estimated Stars</span> <strong>${resultJSON.starCountEstimate}</strong></div>
+                        <div class="metric"><span>🌃 Bortle Scale</span> <strong>Class ${resultJSON.lightPollutionBortleClass}</strong></div>
+                        <div class="metric"><span>📊 Sky Visibility Score</span> <strong>${resultJSON.skyVisibilityScore}/100</strong></div>
+                        <p style="margin-top:1rem;"><strong>Analysis:</strong> ${resultJSON.analysisSummary}</p>
+                    `;
+                }
+
+                resultsData.innerHTML = html;
+                resultsContainer.style.display = "block";
+
+            } catch (error) {
+                alert(`Analysis failed: ${error.message}`);
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+                loader.style.display = "none";
+            }
+        }
+    </script>
+</body>
+
+</html>
